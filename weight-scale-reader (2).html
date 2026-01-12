@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weight Scale Reader</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:sans-serif;padding:20px;max-width:500px;margin:0 auto;background:#f5f5f5}
+h2{text-align:center;margin-bottom:20px}
+.btn{width:100%;padding:15px;margin:10px 0;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+.btn-cam{background:#007bff;color:#fff}
+.btn-sub{background:#28a745;color:#fff}
+#preview{width:100%;max-height:300px;object-fit:contain;display:none;margin:10px 0;border-radius:8px}
+#result{background:#fff;padding:20px;border-radius:8px;margin:15px 0;display:none}
+#weight{font-size:32px;font-weight:bold;color:#333;text-align:center;padding:15px;background:#e9e9e9;border-radius:8px}
+#status{text-align:center;color:#666;margin:10px 0}
+input[type="file"]{display:none}
+.entry{margin-top:15px}
+.entry input{width:100%;padding:12px;border:1px solid #ccc;border-radius:8px;font-size:16px}
+</style>
+</head>
+<body>
+<h2>📷 Weight Scale Reader</h2>
+<input type="text" id="apiKey" placeholder="Enter Claude API Key" style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #ccc;border-radius:8px">
+<input type="file" id="fileInput" accept="image/*" capture="environment">
+<button class="btn btn-cam" onclick="document.getElementById('fileInput').click()">📷 Take Photo / Upload</button>
+<img id="preview">
+<button class="btn btn-sub" id="extractBtn" style="display:none" onclick="extractWeight()">🔍 Extract Weight</button>
+<p id="status"></p>
+<div id="result">
+<p>Detected Weight:</p>
+<div id="weight"></div>
+<div class="entry">
+<input type="text" id="notes" placeholder="Add notes (optional)">
+<button class="btn btn-sub" onclick="saveEntry()" style="margin-top:10px">💾 Save Entry</button>
+</div>
+</div>
+<div id="entries"></div>
+<script>
+let imgBase64='',detectedWeight='',imgType='';
+document.getElementById('fileInput').onchange=function(e){
+const file=e.target.files[0];
+if(!file)return;
+imgType=file.type||'image/jpeg';
+const reader=new FileReader();
+reader.onload=function(ev){
+imgBase64=ev.target.result.split(',')[1];
+document.getElementById('preview').src=ev.target.result;
+document.getElementById('preview').style.display='block';
+document.getElementById('extractBtn').style.display='block';
+document.getElementById('result').style.display='none';
+};
+reader.readAsDataURL(file);
+};
+async function extractWeight(){
+const apiKey=document.getElementById('apiKey').value.trim();
+if(!apiKey){alert('Enter API key');return;}
+if(!imgBase64){alert('Upload image first');return;}
+document.getElementById('status').textContent='Processing...';
+document.getElementById('extractBtn').disabled=true;
+try{
+const res=await fetch('https://api.anthropic.com/v1/messages',{
+method:'POST',
+headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+body:JSON.stringify({
+model:'claude-sonnet-4-20250514',
+max_tokens:100,
+messages:[{role:'user',content:[
+{type:'image',source:{type:'base64',media_type:imgType,data:imgBase64}},
+{type:'text',text:'Extract the weight reading from this scale image. Reply with ONLY the number and unit (e.g., "45.5 kg"). Nothing else.'}
+]}]
+})
+});
+const data=await res.json();
+console.log(data);
+if(data.error){
+document.getElementById('status').textContent='API Error: '+data.error.message;
+return;
+}
+if(!data.content||!data.content[0]){
+document.getElementById('status').textContent='No response from API. Check key/image.';
+return;
+}
+detectedWeight=data.content[0].text.trim();
+document.getElementById('weight').textContent=detectedWeight;
+document.getElementById('result').style.display='block';
+document.getElementById('status').textContent='';
+}catch(err){
+document.getElementById('status').textContent='Error: '+err.message;
+console.log(err);
+}
+document.getElementById('extractBtn').disabled=false;
+}
+function saveEntry(){
+const notes=document.getElementById('notes').value;
+const entry=document.createElement('div');
+entry.style.cssText='background:#fff;padding:15px;margin:10px 0;border-radius:8px;border-left:4px solid #28a745';
+entry.innerHTML=`<strong>${detectedWeight}</strong><br><small>${new Date().toLocaleString()}</small>${notes?'<br><em>'+notes+'</em>':''}`;
+document.getElementById('entries').prepend(entry);
+document.getElementById('notes').value='';
+alert('Entry saved!');
+}
+</script>
+</body>
+</html>
